@@ -3,6 +3,7 @@ import numpy as np
 import random
 import sqlite3 as sql
 from datetime import datetime, timedelta
+import time
 import os
 
 class Utils:
@@ -11,7 +12,7 @@ class Utils:
         self.db_col = ["Index","EName","KPI1","KPI2","KPI3","KPI4","TimeStamp"]
         self.kpi = ["KPI1","KPI2","KPI3","KPI4"]
         try:
-            self.conn = sql.connect("el.db")
+            self.conn = sql.connect("./el.db")
             self.cur = self.conn.cursor()
         except sql.Error as e:
             print(e)
@@ -83,25 +84,34 @@ class Utils:
             l.append(str(prev_2_week_avg))
             l.append(str(curr_hour_avg))
             s = ",".join(l)
+            print(f"created {i} data")
             res[i]= s
         return res
     
     def generate_bar_data(self):
+        
+        start = time.time()
         current_hour, prev_hour_start = self.get_current_hour_range(self.d)
         current_week_start=self.d - timedelta(days=self.d.weekday())
-
+        print("Current hour range: ", start - time.time())
+        
+        start = time.time()
         prev_week_start,prev_week_end = self.get_prev_week_range(current_week_start)
         prev_2_week_start,prev_2_week_end = self.get_prev_week_range(prev_week_start)
+        print("week range: ", start - time.time())
 
+        start = time.time()
         curr_hour_data = self.fetch_data_within_range(prev_hour_start,current_hour)
         prev_week_data = self.fetch_data_within_range(prev_week_start,prev_week_end)
         prev_2_week_data = self.fetch_data_within_range(prev_2_week_start,prev_2_week_end)
+        print("fetched data: ", start - time.time())
         
+        start = time.time()
         curr_hour_df = pd.DataFrame(curr_hour_data,columns=self.db_col)
         prev_week_df = pd.DataFrame(prev_week_data,columns=self.db_col)
         prev_2_week_df = pd.DataFrame(prev_2_week_data,columns=self.db_col)
 
         bar_data = self.get_bar_data(curr_hour_df,prev_week_df,prev_2_week_df)
-
+        print("data generated: ", start - time.time())
         return bar_data
 
