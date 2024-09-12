@@ -52,54 +52,56 @@ class Utils:
             data.to_csv("./data.csv")
             data.to_sql('Transactions',self.conn, if_exists='replace')
         return data
-    
-    def get_KPI_avg(self,data):
-        res = []
-        for i in range(1,11):
-            # el = 'EL0' if i < 10 else 'EL'
-            el = "EL" + str(i)
-            el_data = data[data["EName"] == el][self.kpi]
-            kpi_means = {j: np.round(el_data[j].mean(), 4).item() if not np.isnan(el_data[j].mean()) else 0.00 for j in self.kpi}
-            res.append({el: kpi_means})
-        kpi_avg = np.round((data[self.kpi].mean()).infer_objects(copy=False).fillna(0),4).to_dict()
-        res.append({"total": kpi_avg})
-        return res
-    
+
     def fetch_data_within_range(self,start,end):
         try:
-            query = "SELECT * FROM Transactions WHERE TimeStamp BETWEEN ? AND ?;"
-            self.cur.execute(query, (start, end))
-            selected_data = self.cur.fetchall()
+            d = self.cur.execute(f"SELECT * from Transactions WHERE TimeStamp BETWEEN '{start}' AND '{end}';")
+            selected_data = d.fetchall()
             return selected_data
         except sql.Error as e:
             print(e)
             return []
-
     def get_prev_week_range(self,curr_week_start):
+        curr_week_start = curr_week_start.replace(hour=0, minute=0, second=0, microsecond=0)
         prev_week_start = curr_week_start - timedelta(weeks=1)
-        prev_week_end = curr_week_start - timedelta(seconds=1)
+        prev_week_end = curr_week_start
         return prev_week_start,prev_week_end
-
-    def get_current_week_range(self,current_date):
-        current_week_start = current_date - timedelta(days=current_date.weekday())
-        current_week_end = current_date + timedelta(days=6-current_date.weekday()) + timedelta(seconds=86399)
-        return current_week_start,current_week_end
     
-    def generate_weekly_data(self):
-        current_week_start,current_week_end = self.get_current_week_range(self.d)
+    def get_current_hour_range(self,current_hour):
+        current_hour = current_hour.replace(minute=0, second=0, microsecond=0)
+        prev_hour_end = current_hour - timedelta(hours=1)
+        return current_hour,prev_hour_end
+    
+    def get_bar_data(self,curr_hour_df,prev_week_df,prev_2_week_df):
+        res = {"x":"Week1,Week2,CurrentHour"}
+        for i in self.kpi:
+            l = []
+            prev_week_avg = np.round(prev_week_df[i].mean(),4) if not np.isnan(prev_week_df[i].mean()) else 0.00
+            prev_2_week_avg = np.round(prev_2_week_df[i].mean(),4) if not np.isnan(prev_2_week_df[i].mean()) else 0.00
+            curr_hour_avg = np.round(curr_hour_df[i].mean(),4) if not np.isnan(curr_hour_df[i].mean()) else 0.00
+            l.append(str(prev_week_avg))
+            l.append(str(prev_2_week_avg))
+            l.append(str(curr_hour_avg))
+            s = ",".join(l)
+            res[i]= s
+        return res
+    
+    def generate_bar_data(self):
+        current_hour, prev_hour_start = self.get_current_hour_range(self.d)
+        current_week_start=self.d - timedelta(days=self.d.weekday())
+
         prev_week_start,prev_week_end = self.get_prev_week_range(current_week_start)
         prev_2_week_start,prev_2_week_end = self.get_prev_week_range(prev_week_start)
 
-        curr_week_data = self.fetch_data_within_range(current_week_start,self.d)
-        week1_data = self.fetch_data_within_range(prev_week_start,prev_week_end)
-        week2_data = self.fetch_data_within_range(prev_2_week_start,prev_2_week_end)
+        curr_hour_data = self.fetch_data_within_range(prev_hour_start,current_hour)
+        prev_week_data = self.fetch_data_within_range(prev_week_start,prev_week_end)
+        prev_2_week_data = self.fetch_data_within_range(prev_2_week_start,prev_2_week_end)
         
-        curr_df = pd.DataFrame(curr_week_data,columns=self.db_col)
-        week1_df =pd.DataFrame(week1_data,columns=self.db_col)
-        week2_df =pd.DataFrame(week2_data,columns=self.db_col)
-            
-        curr_week = self.get_KPI_avg(curr_df)
-        week1_avg = self.get_KPI_avg(week1_df)
-        week2_avg = self.get_KPI_avg(week2_df)
-        return [{"current week":curr_week,"previous week":week1_avg,"previous week 2":week2_avg}]
+        curr_hour_df = pd.DataFrame(curr_hour_data,columns=self.db_col)
+        prev_week_df = pd.DataFrame(prev_week_data,columns=self.db_col)
+        prev_2_week_df = pd.DataFrame(prev_2_week_data,columns=self.db_col)
+
+        bar_data = self.get_bar_data(curr_hour_df,prev_week_df,prev_2_week_df)
+
+        return bar_data
 
