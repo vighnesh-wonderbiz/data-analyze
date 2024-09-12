@@ -11,5 +11,5 @@ async def BarChart(date: Optional[str] = None):
         date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     
     l = Utils(date)
-    res = l.generate_weekly_data()
+    res = l.generate_bar_data()
     return res
