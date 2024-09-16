@@ -1,20 +1,21 @@
 import pandas as pd
 import numpy as np
-import random
 import sqlite3 as sql
 from datetime import datetime, timedelta
-import os
+import config as cfg
 
 class Utils:
     def __init__(self,input_d):
-        self.conn = sql.connect("el.db")
-        self.cur = self.conn.cursor()
-        self.kpi = ["KPI1","KPI2"]
-        self.db_col = ["Index","EName",*self.kpi,"TimeStamp"]
-        self.weeks = ["Week1","Week2","Week3","CurrentHour"]
-        self.is_monday = True
-        self.d = input_d
-        self.plant_data_col = ["Week","WeekStart","WeekEnd","IsUpdated",*self.kpi]
+        try:
+            self.conn = sql.connect(cfg.db_path)
+            self.cur = self.conn.cursor()
+            self.d = input_d
+            self.db_col = ["Index","EName",*cfg.kpi,"TimeStamp"]
+            self.plant_data_col = ["Week","WeekStart","WeekEnd","IsUpdated",*cfg.kpi]
+            print("db connected")
+        except sql.Error as e:
+            print(e)
+            raise
 
     def get_date(self,date):
         currDate = datetime.strptime(date, '%Y-%m-%d %H:%M:%S')
@@ -22,9 +23,9 @@ class Utils:
     
     def fetch_data_within_range(self,start,end):
         try:
-            data = self.cur.execute(f"SELECT EName, {",".join(self.kpi)}, TimeStamp from Transactions WHERE TimeStamp BETWEEN '{start}' AND '{end}';")
+            data = self.cur.execute(f"SELECT EName, {",".join(cfg.kpi)}, TimeStamp from Transactions WHERE TimeStamp BETWEEN '{start}' AND '{end}';")
             selected_data = data.fetchall()
-            df = pd.DataFrame(selected_data,columns=["EName",*self.kpi,"TimeStamp"])
+            df = pd.DataFrame(selected_data,columns=["EName",*cfg.kpi,"TimeStamp"])
             return df
         except sql.Error as e:
             print(e)
@@ -32,7 +33,7 @@ class Utils:
     
     def get_current_week_range(self,current_date):
         current_date = current_date.replace(hour=0, minute=0, second=0, microsecond=0) 
-        current_week_start = current_date - timedelta(days=current_date.weekday()) if self.is_monday else current_date
+        current_week_start = current_date - timedelta(days=current_date.weekday()) if cfg.is_monday else current_date
         current_week_end = current_week_start  + timedelta(days=6, hours=23, minutes=59, seconds=59)
         return current_week_start,current_week_end
 
@@ -54,21 +55,21 @@ class Utils:
         return result is not None
 
     def check_week_data(self,):
-        query = f'''SELECT IsUpdated, {", ".join(self.kpi)} FROM PlantData'''
+        query = f'''SELECT IsUpdated, {", ".join(cfg.kpi)} FROM PlantData'''
         row = self.cur.execute(query)
         rows = row.fetchall()
-        df = pd.DataFrame(rows,columns=["IsUpdated",*self.kpi])
+        df = pd.DataFrame(rows,columns=["IsUpdated",*cfg.kpi])
         return True if df["IsUpdated"].sum() >= len(df) else False
 
     def calculate_mean(self,data):
-        kpi_avg = np.round((data[self.kpi].mean()).infer_objects(copy=False).fillna(0),5).tolist()
+        kpi_avg = np.round((data[cfg.kpi].mean()).infer_objects(copy=False).fillna(0),5).tolist()
         return kpi_avg
 
     def fetch_weekly_data(self,d):
         print("Fetching week data")
         df = pd.DataFrame(columns=self.plant_data_col)
         current_week_start,_= self.get_current_week_range(d)
-        for i in self.weeks:
+        for i in cfg.weeks:
             if i != "CurrentHour":
                 data_l = []
                 prev_week_start,prev_week_end = self.get_prev_week_range(current_week_start)
@@ -87,8 +88,6 @@ class Utils:
         data_l = []
         current_hour, prev_hour_start = self.get_current_hour_range(d)
         current_week_start,current_week_end= self.get_current_week_range(d)
-        _,prev_week_end = self.get_prev_week_range(current_week_start)
-        print("Fetching hourly data",current_hour, prev_hour_start)
         curr_hour_data = self.fetch_data_within_range(prev_hour_start,current_hour)
         calculated_mean = self.calculate_mean(curr_hour_data)
         data_l.extend(['CurrentHour',current_week_start,current_week_end,True])
@@ -117,7 +116,7 @@ class Utils:
     
     def generate_plant_data(self):
         cols = []
-        for i in self.kpi:
+        for i in cfg.kpi:
             cols.append(i + " REAL Default 0")
         query1 = f'''
             CREATE TABLE IF Not Exists PlantData
@@ -132,7 +131,7 @@ class Utils:
         '''
         
         w = []
-        for i in self.weeks:
+        for i in cfg.weeks:
             w.append(f"('{i}')")
 
         query2 = f'''
@@ -152,7 +151,6 @@ class Utils:
 
     def get_data_hourly(self):
         d = self.get_date(self.d)
-        
         if not self.table_exists("PlantData"):
             self.generate_plant_data()
         
@@ -191,7 +189,6 @@ class Utils:
             _ = '''SELECT * FROM PlantData;'''
             rows = self.cur.execute(_)
             data = rows.fetchall()
-            print(data)
             df = pd.DataFrame(data,columns=["Index",*self.plant_data_col])
             return df
         except sql.Error as e:
@@ -207,10 +204,10 @@ class Utils:
     
     def fetch_bar_data(self):
         db_data = self.select_bar_data()
-        bar_data = db_data.tail(len(self.weeks))
+        bar_data = db_data.tail(len(cfg.weeks))
         bar_data_dict = {
-            'x':", ".join(self.weeks)
+            'x':", ".join(cfg.weeks)
         }
-        for i in range(0,len(self.weeks)):
-            bar_data_dict[f"{self.weeks[i]}"] = self.convert_string(bar_data[[*self.kpi]].loc[i].tolist())
+        for i in range(0,len(cfg.weeks)):
+            bar_data_dict[f"{cfg.weeks[i]}"] = self.convert_string(bar_data[[*cfg.kpi]].loc[i].tolist())
         return bar_data_dict
